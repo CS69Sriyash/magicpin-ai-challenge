@@ -1,0 +1,13 @@
+# --- Bot Framework ---
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.6.0
+
+# --- Environment Management (for your LLM API keys) ---
+python-dotenv>=1.0.1
+
+# --- LLM Integration (for Phase 2 / Production) ---
+# Standard sync requests
+requests>=2.31.0
+# Or httpx if you plan to do async LLM calls
+httpx>=0.27.0
