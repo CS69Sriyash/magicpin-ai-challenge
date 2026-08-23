@@ -2,14 +2,17 @@
 
 In-progress Python/FastAPI submission for the magicpin Vera AI Challenge.
 
-This repository currently contains the Phase 1 scaffold:
+This repository currently contains an in-progress Phase 1 + Phase 2 scaffold:
 
 - flexible Pydantic v2 schemas for the four-context framework
 - FastAPI app with health and metadata endpoints
 - idempotent `/v1/context` ingestion with version checks and extra-field retention
+- LLM provider abstraction for local Ollama development and Groq production config
+- draft `/v1/tick` proactive messaging flow
+- draft `/v1/reply` reactive conversation flow
 - local judge simulator and seed datasets for development
 
-The response-generation endpoints are not complete yet. This snapshot is meant
+The response-generation flow is still being iterated on. This snapshot is meant
 to preserve progress and make the project easy to continue from GitHub.
 
 ## Project Structure
@@ -51,11 +54,30 @@ Health check:
 curl http://localhost:8080/v1/healthz
 ```
 
+For local LLM composition, run Ollama with the default model:
+
+```bash
+ollama pull qwen2:7b
+ollama serve
+```
+
+Optional environment variables:
+
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2:7b
+GROQ_API_KEY=your_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+```
+
 ## Current API Surface
 
 - `GET /v1/healthz`
 - `GET /v1/metadata`
 - `POST /v1/context`
+- `POST /v1/tick`
+- `POST /v1/reply`
 
 ## Current Ingestion Behavior
 
@@ -69,10 +91,14 @@ For repeated context pushes:
 - same-version pushes return a no-op success response
 - older versions return `409 stale_version`
 
-Planned next endpoints:
+## Current Composition Behavior
 
-- `POST /v1/tick`
-- `POST /v1/reply`
+`/v1/tick` resolves available triggers into merchant/category/customer context,
+calls the active LLM provider, and returns proactive actions.
+
+`/v1/reply` keeps lightweight in-memory conversation history, handles basic
+deterministic stop/repeated-auto-reply cases, and otherwise delegates response
+selection to the composer.
 
 ## Notes
 

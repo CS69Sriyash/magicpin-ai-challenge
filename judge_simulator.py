@@ -26,7 +26,7 @@ LLM_PROVIDER = "ollama"
 LLM_API_KEY = ""  # Not required for Ollama
 LLM_MODEL = "qwen2:7b"  # Your local model tag
 OLLAMA_URL = "http://localhost:11434"
-TEST_SCENARIO = "warmup"
+TEST_SCENARIO = "full_evaluation"  # Options: warmup, phase2_short, auto_reply_hell, intent_transition, hostile, all, full_evaluation
 # =============================================================================
 # ██████  END OF CONFIGURATION - DON'T EDIT BELOW THIS LINE ██████
 # =============================================================================
@@ -501,7 +501,7 @@ class BotClient:
         return self._request(
             "POST",
             "/v1/tick",
-            15,
+            120,
             {
                 "now": datetime.utcnow().isoformat() + "Z",
                 "available_triggers": triggers,
