@@ -4,9 +4,9 @@ In-progress Python/FastAPI submission for the magicpin Vera AI Challenge.
 
 This repository currently contains the Phase 1 scaffold:
 
-- strict Pydantic v2 schemas for the four-context framework
+- flexible Pydantic v2 schemas for the four-context framework
 - FastAPI app with health and metadata endpoints
-- idempotent `/v1/context` ingestion with version checks
+- idempotent `/v1/context` ingestion with version checks and extra-field retention
 - local judge simulator and seed datasets for development
 
 The response-generation endpoints are not complete yet. This snapshot is meant
@@ -56,6 +56,18 @@ curl http://localhost:8080/v1/healthz
 - `GET /v1/healthz`
 - `GET /v1/metadata`
 - `POST /v1/context`
+
+## Current Ingestion Behavior
+
+The context schemas intentionally allow extra fields so category-specific or
+judge-provided data can survive validation and still be available for later LLM
+composition.
+
+For repeated context pushes:
+
+- newer versions replace stored context
+- same-version pushes return a no-op success response
+- older versions return `409 stale_version`
 
 Planned next endpoints:
 
