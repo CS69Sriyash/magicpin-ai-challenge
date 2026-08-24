@@ -16,21 +16,6 @@ That's it!
 Author: magicpin AI Challenge Team
 """
 
-# =============================================================================
-# ██████  CONFIGURATION - EDIT THIS SECTION ██████
-# =============================================================================
-
-# Your bot's URL (where your bot is running)
-BOT_URL = "http://localhost:8080"
-LLM_PROVIDER = "ollama"
-LLM_API_KEY = ""  # Not required for Ollama
-LLM_MODEL = "qwen2:7b"  # Your local model tag
-OLLAMA_URL = "http://localhost:11434"
-TEST_SCENARIO = "full_evaluation"  # Options: warmup, phase2_short, auto_reply_hell, intent_transition, hostile, all, full_evaluation
-# =============================================================================
-# ██████  END OF CONFIGURATION - DON'T EDIT BELOW THIS LINE ██████
-# =============================================================================
-
 import os
 import sys
 import json
@@ -43,6 +28,52 @@ from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 from urllib import request as urlrequest, error as urlerror
 from abc import ABC, abstractmethod
+
+# Load a local .env file if one exists, so GROQ_API_KEY (etc.) is picked up
+# the same way whether this is run via `python judge_simulator.py`,
+# `uv run python judge_simulator.py`, or anything else — `uv run` does NOT
+# auto-load .env files on its own, which is the most common cause of
+# "LLM_API_KEY is not set!" even when a .env with the key clearly exists.
+# No-op if python-dotenv isn't installed or no .env is present.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        for raw_line in env_path.read_text().splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+    else:
+        print(
+            "[WARN] python-dotenv is not installed in this environment and no "
+            ".env file was found, so GROQ_API_KEY etc. must be set as real "
+            "environment variables."
+        )
+
+# =============================================================================
+# ██████  CONFIGURATION - EDIT THIS SECTION ██████
+# =============================================================================
+
+BOT_URL = os.getenv("BOT_URL", "http://127.0.0.1:8080")
+LLM_PROVIDER = os.getenv("JUDGE_LLM_PROVIDER", "groq")
+LLM_API_KEY = os.getenv("JUDGE_GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+LLM_MODEL = os.getenv("JUDGE_GROQ_MODEL") or os.getenv(
+    "GROQ_MODEL", "qwen/qwen3.6-27b"
+)
+OLLAMA_URL = "http://localhost:11434"  # (This will be ignored since provider is groq)
+TEST_SCENARIO = "full_evaluation"
+FULL_EVAL_BATCH_DELAY_SECONDS = float(os.getenv("FULL_EVAL_BATCH_DELAY_SECONDS", "0"))
+# =============================================================================
+# ██████  END OF CONFIGURATION - DON'T EDIT BELOW THIS LINE ██████
+# =============================================================================
+
 
 # Constants
 TIMEOUT_LLM = 45
@@ -293,7 +324,13 @@ class DeepSeekProvider(LLMProvider):
 class GroqProvider(LLMProvider):
     def __init__(self, api_key: str, model: str = ""):
         self.api_key = api_key
-        self.model = model or "llama-3.1-70b-versatile"
+        self.model = self._normalize_model(model or "qwen/qwen3.6-27b")
+
+    @staticmethod
+    def _normalize_model(model: str) -> str:
+        if model == "qwen3.6-27b":
+            return "qwen/qwen3.6-27b"
+        return model
 
     def name(self) -> str:
         return f"Groq ({self.model})"
@@ -304,22 +341,32 @@ class GroqProvider(LLMProvider):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 1500,
+        }
+        if self.model.startswith("qwen/"):
+            # Qwen reasoning models on Groq can append reasoning/self-correction
+            # around the requested JSON. Keep this scoped to Qwen; other Groq
+            # models may reject this parameter.
+            payload["reasoning_effort"] = "none"
+
         req = urlrequest.Request(
             "https://api.groq.com/openai/v1/chat/completions",
-            data=json.dumps(
-                {
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": 0.2,
-                    "max_tokens": 1500,
-                }
-            ).encode("utf-8"),
+            data=json.dumps(payload).encode("utf-8"),
             headers={
-                "Authorization": f"Bearer {self.api_key}",
+                "Authorization": f"Bearer {LLM_API_KEY}",
                 "Content-Type": "application/json",
+                "User-Agent": "magicpin-ai-challenge-judge/1.0",
             },
         )
-        resp = urlrequest.urlopen(req, timeout=TIMEOUT_LLM)
+        try:
+            resp = urlrequest.urlopen(req, timeout=TIMEOUT_LLM)
+        except urlerror.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP {e.code}: {body[:500]}") from e
         data = json.loads(resp.read().decode("utf-8"))
         return data["choices"][0]["message"]["content"]
 
@@ -637,13 +684,27 @@ Score each dimension 0-10 with clear reasoning. Be STRICT."""
             return self._fallback_score(action)
 
     def _parse_response(self, response: str, action: Dict) -> ScoreResult:
-        """Parse LLM JSON response."""
-        match = re.search(r"\{[\s\S]*\}", response)
-        if not match:
+        """Parse LLM JSON response.
+
+        Uses json.JSONDecoder().raw_decode() from the first '{' rather than
+        a greedy regex — raw_decode parses exactly one JSON value and simply
+        ignores anything the model appends afterward (a reasoning model can
+        leave a trailing self-correction/continuation fragment after the
+        real answer; a greedy `\\{[\\s\\S]*\\}` regex would swallow that
+        fragment into the match and fail with "Extra data" even though the
+        real answer parsed fine on its own).
+        """
+        start = response.find("{")
+        if start == -1:
             return self._fallback_score(action)
 
         try:
-            data = json.loads(match.group())
+            data, _ = json.JSONDecoder().raw_decode(response[start:])
+        except json.JSONDecodeError as e:
+            print_warn(f"Parse error: {e}")
+            return self._fallback_score(action)
+
+        try:
             result = ScoreResult(
                 specificity=min(10, max(0, int(data.get("specificity", 5)))),
                 specificity_reason=data.get("specificity_reason", ""),
@@ -949,6 +1010,8 @@ class JudgeSimulator:
 
         for mid, m in self.dataset.merchants.items():
             self.client.push_context("merchant", mid, 1, m)
+        for cid, c in self.dataset.customers.items():
+            self.client.push_context("customer", cid, 1, c)
         for tid, t in self.dataset.triggers.items():
             self.client.push_context("trigger", tid, 1, t)
 
@@ -970,6 +1033,12 @@ class JudgeSimulator:
 
             for action in actions:
                 self._score_and_display(action, verbose=False)
+
+            if FULL_EVAL_BATCH_DELAY_SECONDS > 0 and i + 5 < len(tids):
+                print_info(
+                    f"Waiting {FULL_EVAL_BATCH_DELAY_SECONDS:.0f}s before next batch"
+                )
+                time.sleep(FULL_EVAL_BATCH_DELAY_SECONDS)
 
         return True
 

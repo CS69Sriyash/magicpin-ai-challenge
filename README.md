@@ -54,6 +54,15 @@ Health check:
 curl http://localhost:8080/v1/healthz
 ```
 
+Run the local judge simulator against that bot:
+
+```bash
+BOT_URL=http://127.0.0.1:8080 python judge_simulator.py
+```
+
+For the real judge, `localhost` is not enough: deploy the bot and set
+`BOT_URL` to the public HTTPS endpoint that the judge can reach.
+
 For local LLM composition, run Ollama with the default model:
 
 ```bash
@@ -68,7 +77,7 @@ LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen2:7b
 GROQ_API_KEY=your_key_here
-GROQ_MODEL=llama-3.1-8b-instant
+GROQ_MODEL=qwen/qwen3.6-27b
 ```
 
 ## Current API Surface

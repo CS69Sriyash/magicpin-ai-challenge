@@ -1,18 +1,32 @@
 """
-bot.py — magicpin Vera AI Challenge submission (Phase 1 + Phase 2)
+bot.py — magicpin Vera AI Challenge submission (Phase 1 + Phase 2 + Phase 3)
 
-Phase 1 (unchanged from prior version): flexible Pydantic v2 context
-schemas, in-memory CONTEXT_STORE, /v1/healthz, /v1/metadata, /v1/context.
+Phase 1 (unchanged): flexible Pydantic v2 context schemas, in-memory
+CONTEXT_STORE, /v1/healthz, /v1/metadata, /v1/context, idempotency logic.
 
-Phase 2 (this update):
-  - LLMProvider abstract interface + OllamaProvider (dev) + GroqProvider
-    (prod-ready, unused until GROQ_API_KEY is set) — swap via LLM_PROVIDER
-    env var, no code changes needed.
-  - EngagementComposer — single system prompt built from the 5-dimension
-    rubric (challenge-brief.md §8) + compulsion levers (§10) + anti-patterns
-    (§11); composes proactive sends and reactive replies.
-  - POST /v1/tick   — proactive messaging (challenge-testing-brief.md §2.2)
-  - POST /v1/reply  — reactive messaging (challenge-testing-brief.md §2.3)
+Phase 2 (unchanged): LLMProvider interface (OllamaProvider dev / GroqProvider
+prod), /v1/tick, /v1/reply, conversation state tracking.
+
+Phase 3 (this update) — EngagementComposer rewritten for eval tuning:
+  1. Dynamic category routing — system prompt's tone directive is built
+     per CategoryContext.slug rather than one fixed prompt for all verticals.
+  2. Anchor-fact extraction — rather than just *telling* the LLM "don't
+     hallucinate, quote exact numbers," the composer resolves the specific
+     fact the trigger references (a digest item's citation, or the
+     trigger's own payload numbers) and injects it as a labeled,
+     already-correct block the model is instructed to quote verbatim. This
+     is a stronger guardrail than a prompt instruction alone — it removes
+     the retrieval step (and its hallucination risk) from the LLM's job
+     entirely for the fact that most needs to be exact.
+  3. CTA enforcement — every proactive message must end in exactly one
+     binary/specific CTA, with a narrow, explicit exception (brief Appendix B)
+     for customer-facing slot-booking replies where 2 concrete time slots
+     are offered — that's one decision with two valid answers, not two CTAs.
+  4. Few-shot — Appendix A (merchant-facing) and Appendix B (customer-facing)
+     from challenge-brief.md are embedded verbatim as calibration examples.
+  5. send_as correctness — deterministically "vera" for merchant-facing,
+     "merchant_on_behalf" for customer-facing (brief §5), rather than left
+     to the LLM's discretion.
 
 Run locally:
     uvicorn bot:app --host 0.0.0.0 --port 8080
@@ -23,6 +37,7 @@ Requires a running Ollama daemon with qwen2:7b pulled for local dev:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -30,6 +45,7 @@ import re
 import time
 import uuid
 from abc import ABC, abstractmethod
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -38,7 +54,26 @@ from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-APP_VERSION = "0.2.0"
+# Load a local .env file if one exists. `uv run` (and plain `python`/`uvicorn`
+# invocations) do NOT auto-load .env files the way some tooling does — this
+# is the actual, most common cause of "GROQ_API_KEY works in one terminal but
+# not when launched via uv run/a process manager" reports. This call is a
+# no-op if no .env is present, so it's safe in every environment including
+# the judge's container where secrets are presumably injected as real env vars.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    print(
+        "[WARN] python-dotenv is not installed in this environment — .env "
+        "files will NOT be loaded, so GROQ_API_KEY etc. must be set as real "
+        "environment variables. Fix: run `uv add python-dotenv` in this "
+        "project directory (this warning printed before logging is "
+        "configured, hence plain print not logger)."
+    )
+
+APP_VERSION = "0.4.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +83,7 @@ logger = logging.getLogger("vera_bot")
 
 
 # =============================================================================
-# PHASE 1 — Context schemas + ingestion (unchanged in behavior)
+# PHASE 1 — Context schemas + ingestion (unchanged)
 # =============================================================================
 
 
@@ -147,13 +182,9 @@ CONVERSATIONS: dict[str, list[dict[str, Any]]] = {}
 
 # conversation_id -> {"merchant_id", "customer_id", "category_slug", "trigger_id",
 #                      "sent_bodies": set[str]}
-# Lets /v1/reply recover which merchant/category a conversation belongs to
-# even though the wire schema only guarantees merchant_id/customer_id on the
-# very first /v1/reply call for a conversation the bot itself started.
 CONVERSATION_META: dict[str, dict[str, Any]] = {}
 
 # suppression_key -> True, once a trigger with this key has produced a send.
-# Prevents re-firing the same nudge every tick while it's still "available".
 SENT_SUPPRESSION_KEYS: set[str] = set()
 
 
@@ -184,14 +215,22 @@ async def healthz() -> dict[str, Any]:
 
 @app.get("/v1/metadata")
 async def metadata() -> dict[str, Any]:
+    # Introspect the actual live provider/model rather than a hardcoded
+    # string — this used to always say "qwen2:7b (via Ollama)" regardless
+    # of LLM_PROVIDER, which is a real misrepresentation once Groq is
+    # actually the one composing every message.
+    provider = COMPOSER.llm
+    model_name = getattr(provider, "model", "unknown")
     return {
         "team_name": "Team Sriyash",
         "team_members": ["Sriyash"],
-        "model": os.getenv("OLLAMA_MODEL", "qwen2:7b") + " (via Ollama)",
+        "model": f"{model_name} (via {provider.name})",
         "approach": (
-            "Flexible-schema ingestion + single-prompt EngagementComposer "
-            "(rubric-driven system prompt) behind a swappable LLMProvider "
-            "interface; local Ollama for dev, Groq for production."
+            "Flexible-schema ingestion + category-routed EngagementComposer "
+            "with anchor-fact extraction (fights hallucination on specific "
+            "numbers/citations) and enforced single-CTA structure, behind a "
+            "swappable LLMProvider interface; local Ollama for dev, Groq for "
+            "production."
         ),
         "version": app.version,
         "submitted_at": _utc_now_iso(),
@@ -252,7 +291,7 @@ async def push_context(request: ContextPushRequest) -> JSONResponse:
 
 
 # =============================================================================
-# PHASE 2 — LLM provider interface
+# PHASE 2 — LLM provider interface (unchanged)
 # =============================================================================
 
 
@@ -276,12 +315,7 @@ class LLMError(RuntimeError):
 
 
 class OllamaProvider(LLMProvider):
-    """
-    Local inference via the Ollama daemon — used for Phase 2 dev/iteration
-    against judge_simulator.py. Free, zero rate limit, but not what we'd
-    submit for the scored run (too slow under 10 req/s concurrency on a
-    typical container CPU).
-    """
+    """Local inference via the Ollama daemon — Phase 2/3 dev/iteration only."""
 
     name = "ollama"
 
@@ -321,11 +355,64 @@ class OllamaProvider(LLMProvider):
         return text
 
 
+class _TokenRateLimiter:
+    """
+    Rolling 60s token-bucket limiter. Instead of guessing a flat inter-request
+    sleep, this tracks actual (estimated) tokens spent in the trailing minute
+    and only blocks a caller when the budget would genuinely be exceeded —
+    so a burst of small requests isn't penalized the same as a burst of large
+    ones. Shared across every call made through one provider instance (the
+    process uses a single COMPOSER/provider singleton), so it correctly
+    serializes both /v1/tick and /v1/reply traffic against the same quota.
+    """
+
+    def __init__(self, tokens_per_minute: int, safety_margin: float = 0.85) -> None:
+        # Target a bit under the stated quota — Groq's window boundary
+        # isn't guaranteed to align exactly with our own clock, so leaving
+        # ~15% headroom avoids boundary-edge 429s.
+        self.budget = max(1, int(tokens_per_minute * safety_margin))
+        # Each entry is a *mutable* [timestamp, tokens] pair (not a tuple) so
+        # acquire() can hand back a live reference that compose() later
+        # corrects with the real usage Groq reports — otherwise every
+        # reservation stays pinned at its conservative worst-case estimate
+        # for the full 60s window even when the actual call used far fewer
+        # tokens, causing us to self-throttle harder than Groq's own quota
+        # would actually require.
+        self._usage: deque[list[float | int]] = deque()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self, estimated_tokens: int) -> list[float | int]:
+        async with self._lock:
+            while True:
+                now = time.monotonic()
+                while self._usage and now - self._usage[0][0] > 60:
+                    self._usage.popleft()
+                used = sum(tokens for _, tokens in self._usage)
+                if used + estimated_tokens <= self.budget:
+                    entry: list[float | int] = [now, estimated_tokens]
+                    self._usage.append(entry)
+                    return entry
+                sleep_for = max(0.1, 60 - (now - self._usage[0][0]) + 0.05)
+                logger.info(
+                    "rate limiter: %d/%d used, pacing %.1fs before next call",
+                    used,
+                    self.budget,
+                    sleep_for,
+                )
+                await asyncio.sleep(sleep_for)
+
+    @staticmethod
+    def adjust(entry: list[float | int], actual_tokens: int) -> None:
+        """Replace a reservation's worst-case estimate with the real usage
+        the provider reported, so subsequent budget checks reflect reality."""
+        entry[1] = actual_tokens
+
+
 class GroqProvider(LLMProvider):
     """
-    Production swap target — sub-second Llama 3 inference. Not used until
-    LLM_PROVIDER=groq and GROQ_API_KEY are set; kept here so the swap at
-    submission time is a config change, not new code.
+    Production swap target — sub-second inference. Paces itself against
+    Groq's per-model TPM quota internally, so callers (tick/reply) don't
+    need to know or care about rate limiting — they just await compose().
     """
 
     name = "groq"
@@ -336,14 +423,45 @@ class GroqProvider(LLMProvider):
         api_key: str | None = None,
         model: str | None = None,
         timeout_seconds: float = 20.0,
+        tokens_per_minute: int | None = None,
+        max_tokens: int = 300,
     ) -> None:
-        self.api_key = api_key or os.getenv("GROQ_API_KEY", "")
-        self.model = model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        self.api_key = api_key if api_key is not None else os.getenv("GROQ_API_KEY", "")
+        self.model = self._normalize_model(
+            model or os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+        )
         self.timeout_seconds = timeout_seconds
+        self.max_tokens = max_tokens
+        tpm = tokens_per_minute or int(os.getenv("GROQ_TPM_LIMIT", "8000"))
+        self._rate_limiter = _TokenRateLimiter(tpm)
         if not self.api_key:
-            logger.warning("GroqProvider initialized without GROQ_API_KEY set")
+            logger.error(
+                "GroqProvider initialized with an EMPTY GROQ_API_KEY. Every call will "
+                "401 until this is set. If you're launching via `uv run`, note it does "
+                "NOT auto-load a .env file on its own — this file calls load_dotenv() "
+                "at import time, so confirm a .env with GROQ_API_KEY=... exists in the "
+                "working directory `uv run` is invoked from, or export the var in the "
+                "same shell before running, or use `uv run --env-file .env ...`."
+            )
+
+    @staticmethod
+    def _normalize_model(model: str) -> str:
+        if model == "qwen3.6-27b":
+            return "qwen/qwen3.6-27b"
+        return model
+
+    @staticmethod
+    def _estimate_tokens(system: str, prompt: str, max_tokens: int) -> int:
+        # Conservative ~4 chars/token heuristic for input, plus the full
+        # completion budget as a worst-case reservation (we reserve before
+        # we know the actual completion length, so we must assume the max).
+        input_chars = len(system) + len(prompt)
+        return (input_chars // 4) + max_tokens
 
     async def compose(self, prompt: str, system: str) -> str:
+        estimated = self._estimate_tokens(system, prompt, self.max_tokens)
+        reservation = await self._rate_limiter.acquire(estimated)
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -355,7 +473,15 @@ class GroqProvider(LLMProvider):
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.4,
-            "max_tokens": 700,
+            "max_tokens": self.max_tokens,
+            # CRITICAL for qwen3 models on Groq: without this, the model
+            # spends part (sometimes most) of max_tokens on hidden reasoning
+            # before ever writing the actual answer, since thinking tokens
+            # are billed against the same completion budget. With a tight
+            # max_tokens=300, that reasoning overhead was truncating the
+            # real JSON answer down to a garbage fragment. "none" disables
+            # reasoning entirely for qwen3 models (Groq API reference).
+            "reasoning_effort": "none",
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
@@ -365,7 +491,19 @@ class GroqProvider(LLMProvider):
         except httpx.TimeoutException as exc:
             raise LLMError(f"groq timeout after {self.timeout_seconds}s") from exc
         except httpx.HTTPError as exc:
-            raise LLMError(f"groq HTTP error: {exc}") from exc
+            body_snippet = ""
+            if exc.response is not None:
+                body_snippet = f" body={exc.response.text[:300]!r}"
+            raise LLMError(f"groq HTTP error: {exc}{body_snippet}") from exc
+
+        # Correct our rate-limiter reservation from "worst-case estimate" to
+        # what Groq actually reports — otherwise every call stays pinned at
+        # its conservative upper bound for the full 60s window even when the
+        # real completion was much shorter (likely now that reasoning is off).
+        usage = data.get("usage") or {}
+        actual_total = usage.get("total_tokens")
+        if isinstance(actual_total, int) and actual_total > 0:
+            self._rate_limiter.adjust(reservation, actual_total)
 
         try:
             return data["choices"][0]["message"]["content"]
@@ -373,85 +511,328 @@ class GroqProvider(LLMProvider):
             raise LLMError(f"groq malformed response: {data}") from exc
 
 
+class GeminiProvider(LLMProvider):
+    """
+    Second production option — Google's free tier has dramatically more TPM
+    headroom than Groq's free tier (order of 250K-1M TPM vs. Groq's 8,000),
+    which was our actual bottleneck. Two things worth knowing before relying
+    on this:
+
+    1. Gemini 2.5 Flash defaults to dynamic "thinking" (thinking_budget=-1)
+       on Google's direct API — the same class of issue as qwen3's
+       reasoning_effort on Groq, where hidden reasoning tokens can eat into
+       the visible answer. We explicitly set thinking_budget=0 to disable it.
+    2. There's a documented Gemini 2.5 Flash bug where finish_reason reports
+       "STOP" (i.e. "completed normally") even when the output was silently
+       truncated by the thinking/token-budget interaction — no error signal
+       at all. We defend against this with a minimum-length sanity check on
+       the returned text rather than trusting finish_reason.
+    3. Free-tier RPM (5-30/min depending on model) is comparable to or worse
+       than Groq's — TPM headroom doesn't mean unlimited throughput. Within
+       one /v1/tick burst this can become the new binding constraint; our
+       deadline-aware tick loop already handles that by returning partial
+       results and retrying the rest on a later tick, so this isn't fatal,
+       just worth knowing.
+
+    Exact free-tier RPM/TPM figures vary by model and change over time —
+    defaults below are deliberately conservative; verify current numbers on
+    your own Google AI Studio dashboard and override via env vars if needed.
+    """
+
+    name = "gemini"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        timeout_seconds: float = 20.0,
+        requests_per_minute: int | None = None,
+        tokens_per_minute: int | None = None,
+        max_output_tokens: int = 300,
+    ) -> None:
+        self.api_key = (
+            api_key if api_key is not None else os.getenv("GEMINI_API_KEY", "")
+        )
+        self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.timeout_seconds = timeout_seconds
+        self.max_output_tokens = max_output_tokens
+        rpm = requests_per_minute or int(os.getenv("GEMINI_RPM_LIMIT", "10"))
+        tpm = tokens_per_minute or int(os.getenv("GEMINI_TPM_LIMIT", "250000"))
+        # Two independent rolling-window limiters: RPM (cost=1 per call) and
+        # TPM (cost=estimated tokens per call) reuse the same tested limiter
+        # class — a "requests per minute" cap is just a token-bucket where
+        # every request costs exactly 1.
+        self._rpm_limiter = _TokenRateLimiter(rpm, safety_margin=0.9)
+        self._tpm_limiter = _TokenRateLimiter(tpm, safety_margin=0.85)
+        if not self.api_key:
+            logger.error(
+                "GeminiProvider initialized with an EMPTY GEMINI_API_KEY. Every "
+                "call will fail until this is set (via .env or a real env var)."
+            )
+
+    @staticmethod
+    def _estimate_tokens(system: str, prompt: str, max_output_tokens: int) -> int:
+        input_chars = len(system) + len(prompt)
+        return (input_chars // 4) + max_output_tokens
+
+    async def compose(self, prompt: str, system: str) -> str:
+        estimated = self._estimate_tokens(system, prompt, self.max_output_tokens)
+        await self._rpm_limiter.acquire(1)
+        tpm_reservation = await self._tpm_limiter.acquire(estimated)
+
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.model}:generateContent?key={self.api_key}"
+        )
+        payload = {
+            "system_instruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.4,
+                "maxOutputTokens": self.max_output_tokens,
+                # Disable dynamic thinking — see class docstring. Without
+                # this, hidden reasoning tokens can consume the output
+                # budget the same way qwen3's reasoning_effort did on Groq.
+                "thinkingConfig": {"thinkingBudget": 0},
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.TimeoutException as exc:
+            raise LLMError(f"gemini timeout after {self.timeout_seconds}s") from exc
+        except httpx.HTTPError as exc:
+            body_snippet = ""
+            if exc.response is not None:
+                body_snippet = f" body={exc.response.text[:300]!r}"
+            raise LLMError(f"gemini HTTP error: {exc}{body_snippet}") from exc
+
+        usage = data.get("usageMetadata") or {}
+        actual_total = usage.get("totalTokenCount")
+        if isinstance(actual_total, int) and actual_total > 0:
+            self._tpm_limiter.adjust(tpm_reservation, actual_total)
+
+        try:
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMError(f"gemini malformed response: {data}") from exc
+
+        # Defend against the documented silent-truncation bug: finish_reason
+        # can report normal completion even when thinking/token-budget
+        # interaction cut the real answer short. A suspiciously tiny
+        # response for what should be a JSON object with a real message
+        # body is treated as a failure rather than trusted at face value.
+        if len(text.strip()) < 20:
+            raise LLMError(
+                f"gemini response suspiciously short ({len(text)} chars) — "
+                f"likely silent truncation, not a real answer: {text!r}"
+            )
+
+        return text
+
+
 def get_llm_provider() -> LLMProvider:
-    """The one place that reads LLM_PROVIDER. Default: ollama (Phase 2 dev)."""
+    """
+    The one place that reads LLM_PROVIDER. Default stays "ollama" for local
+    dev; set LLM_PROVIDER=groq or LLM_PROVIDER=gemini (in your shell or
+    .env) for the scored run — this stays config-driven rather than
+    hardcoded so switching providers during debugging never requires a
+    source edit.
+    """
     provider_key = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
     if provider_key == "groq":
         return GroqProvider()
+    if provider_key == "gemini":
+        return GeminiProvider()
     if provider_key != "ollama":
         logger.warning("Unknown LLM_PROVIDER=%r, falling back to ollama", provider_key)
     return OllamaProvider()
 
 
 # =============================================================================
-# PHASE 2 — EngagementComposer
+# PHASE 3 — EngagementComposer (rewritten)
 # =============================================================================
 
-SYSTEM_PROMPT = """You are the composer for Vera, magicpin's AI merchant-engagement assistant.
-You write ONE message at a time — either a proactive nudge to a merchant/customer,
-or a reply to something they just said. You are scored by an LLM judge on 5
-dimensions, each 0-10 (challenge-brief.md §8):
+# --- 1. Dynamic category routing --------------------------------------------
+#
+# Hardcoded tone directives per the exact 5 verticals in the dataset, plus a
+# generic fallback for any category we haven't seen. This is layered ON TOP
+# of (not instead of) the category's own voice.tone/vocab_allowed/vocab_taboo
+# fields from CategoryContext — the hardcoded directive sets the register,
+# the live context data supplies the concrete vocabulary to use/avoid.
 
-1. SPECIFICITY — anchor on a concrete, verifiable fact from the context provided
-   (a number, a date, a headline, a peer stat, a source citation). "Increase your
-   sales" or "Flat 30% off" is generic and scores low. "Haircut @ ₹99" or
-   "38% lower caries recurrence — JIDA Oct 2026 p.14" is specific and scores high.
-   NEVER invent a number, date, or fact that isn't in the context you were given —
-   fabrication is penalized more heavily than vagueness.
+CATEGORY_VOICE_DIRECTIVES: dict[str, str] = {
+    "dentists": (
+        "Clinical, peer-to-peer, respectful. Write as one professional "
+        "addressing another — the way a colleague would flag a relevant "
+        "case study or guideline change, not the way a salesperson pitches. "
+        'Use "Dr. {name}" where the merchant\'s identity includes a name. '
+        "No hype, no overclaiming, no medical guarantees."
+    ),
+    "salons": (
+        "Warm, practical, approachable-expert. Friendly without being "
+        "gushy — like a trusted stylist giving straight advice, not a "
+        "promo blast."
+    ),
+    "restaurants": (
+        "Operator-to-operator, fellow-business-owner tone. Talk footfall, "
+        "covers, and margins the way one restaurateur would talk to "
+        "another — practical, a little busy, no food-blogger flourishes."
+    ),
+    "gyms": (
+        "Motivational coach tone — energetic and disciplined, but grounded "
+        "in the merchant's actual numbers, not generic hype. Coach-to-member "
+        "register, not drill-sergeant."
+    ),
+    "pharmacies": (
+        "Trustworthy, precise, neighbourhood-pharmacist tone. Calm and "
+        "exact — this is a regulated, health-adjacent business; precision "
+        "reads as competence here more than enthusiasm does."
+    ),
+}
+_DEFAULT_VOICE_DIRECTIVE = (
+    "Match the tone, register, and vocabulary given in this category's "
+    "voice profile below as closely as possible."
+)
 
-2. CATEGORY FIT — match the voice/vocabulary/register for this business's category.
-   Dentists: clinical, peer-to-peer, respectful (use vocab like the ones given,
-   avoid words on the taboo list). Salons: warm and practical. Restaurants:
-   fellow-operator tone. Gyms: energetic, coach-to-member. Pharmacies: trustworthy,
-   precise. Never use a taboo word from the category's voice profile.
 
-3. MERCHANT FIT — personalize to THIS merchant: use their real name/owner name,
-   their real numbers (views, calls, offers, signals), honor their language
-   preference (code-mix Hindi-English naturally if their languages include "hi"),
-   and reference their actual conversation history if relevant. Never fabricate
-   merchant data not present in the context.
+def _category_voice_directive(category_slug: str) -> str:
+    return CATEGORY_VOICE_DIRECTIVES.get(category_slug, _DEFAULT_VOICE_DIRECTIVE)
 
-4. TRIGGER RELEVANCE — the message must make "why now" obvious. Reference the
-   specific trigger's payload data directly, not a generic "check your profile"
-   nudge that could apply to anyone at any time.
 
-5. ENGAGEMENT COMPULSION — use at least one lever from this list (challenge-brief.md §10):
-   loss aversion ("you're missing X"), social proof ("N other dentists in your
-   locality did Y"), effort externalization ("I've already drafted X — just say go"),
-   curiosity ("want to see who?"), reciprocity, asking the merchant a direct
-   question, or a single binary CTA (never multiple choices in one message).
+# --- 4. Few-shot examples (verbatim from challenge-brief.md Appendix A/B) ---
 
-ANTI-PATTERNS TO NEVER PRODUCE (challenge-brief.md §11):
-- Generic offers when a specific service+price exists in the offer catalog.
-- More than one CTA in a single message.
-- A buried CTA — the ask should land in the last sentence.
-- Repeating a message body you've already sent in this same conversation.
+FEW_SHOT_BLOCK = """EXAMPLES (structure only — don't reuse these facts for a different merchant/customer):
+Merchant-facing (send_as=vera): "Dr. Meera, JIDA's Oct issue landed — 2,100-patient trial: 3-month fluoride recall cuts caries recurrence 38% better than 6-month, relevant to your high-risk adults. Want the abstract + a patient WhatsApp draft? — JIDA Oct 2026 p.14"
+Customer-facing (send_as=merchant_on_behalf, slot-booking exception applies): "Hi Priya, Dr. Meera's clinic here — it's been 5 months, your 6-month cleaning recall is due. 2 slots open: Wed 6pm or Thu 5pm. ₹299 cleaning + free fluoride. Reply 1 for Wed, 2 for Thu.\""""
 
-CONVERSATION BEHAVIOR (for replies, not initial sends):
-- If the merchant's message looks like a canned auto-reply (generic "thanks, our
-  team will get back to you" wording) and this is the FIRST time you're seeing
-  it, make ONE more attempt to reach a real person with a low-friction ask.
-  If the SAME auto-reply pattern repeats, stop — end the conversation gracefully.
+
+# --- 2. Anchor-fact extraction (fights hallucination) -----------------------
+
+
+def _resolve_digest_anchor(
+    category: dict[str, Any], trigger: dict[str, Any]
+) -> dict[str, Any] | None:
+    """
+    Several trigger kinds (research_digest, regulation_change, cde_opportunity)
+    reference a specific category.digest[] item by id rather than carrying
+    the citation inline. Resolving it here — instead of asking the LLM to
+    find it in a list — removes the single highest-risk hallucination point:
+    a fabricated or mismatched source citation.
+    """
+    payload = trigger.get("payload", {}) or {}
+    item_id = payload.get("top_item_id") or payload.get("digest_item_id")
+    if not item_id:
+        return None
+    for item in category.get("digest", []) or []:
+        if item.get("id") == item_id:
+            return item
+    logger.warning(
+        "trigger references digest item %s but it wasn't found in category.digest",
+        item_id,
+    )
+    return None
+
+
+def _format_anchor_block(category: dict[str, Any], trigger: dict[str, Any]) -> str:
+    digest_anchor = _resolve_digest_anchor(category, trigger)
+    if digest_anchor:
+        return (
+            "ANCHOR FACT — this trigger references a specific digest item. "
+            "Quote the 'source' field VERBATIM (exact citation text) and use "
+            "the exact numbers below. Do not paraphrase the citation or round "
+            "the numbers:\n"
+            f"  title: {digest_anchor.get('title')}\n"
+            f"  source (quote verbatim): {digest_anchor.get('source')}\n"
+            f"  summary: {digest_anchor.get('summary')}\n"
+            f"  trial_n: {digest_anchor.get('trial_n')}\n"
+            f"  patient_segment: {digest_anchor.get('patient_segment')}\n"
+            f"  actionable: {digest_anchor.get('actionable')}\n"
+            f"  date: {digest_anchor.get('date')}\n"
+            f"  credits: {digest_anchor.get('credits')}"
+        )
+
+    payload = trigger.get("payload", {}) or {}
+    return (
+        "ANCHOR FACT — every number, percentage, date, and named entity in "
+        "this trigger payload MUST appear in your message in this exact "
+        "form (e.g. write '-50%' not 'a significant drop'; write '12 days' "
+        "not 'soon'). Do not summarize these away:\n"
+        f"  {payload}"
+    )
+
+
+# --- System prompt builders --------------------------------------------------
+
+_BASE_RUBRIC_RULES = """You are Vera's composer, magicpin's AI merchant-engagement assistant. Write ONE short message. Judged 0-10 on 5 axes (challenge-brief.md §8):
+1. SPECIFICITY — use the exact number/date/citation from the ANCHOR FACT block below, word-for-word / digit-for-digit. Never invent a fact not given to you.
+2. CATEGORY FIT — match the CATEGORY VOICE below; never use a taboo word.
+3. MERCHANT FIT — use the merchant's real name/numbers/language; never fabricate merchant data.
+4. TRIGGER RELEVANCE — reference the ANCHOR FACT directly; no generic nudges.
+5. ENGAGEMENT — use one lever: loss aversion, social proof, effort-externalization ("I've already drafted X"), curiosity, reciprocity, or a direct question.
+Never: a generic offer when a priced catalog item exists, a buried CTA, repeating a body already sent in this conversation, or exposing internal field/jargon names to the merchant."""
+
+_CTA_RULES = """CTA RULES: end with exactly ONE call-to-action — a single binary choice ("Reply YES...", "Reply STOP...") or one specific question. Never two questions or a list of options."""
+
+
+def _build_proactive_system_prompt(
+    category_slug: str, allow_multi_slot_cta: bool
+) -> str:
+    voice_directive = _category_voice_directive(category_slug)
+    slot_note = (
+        "\n\nSLOT-BOOKING EXCEPTION APPLIES to this message: the trigger "
+        "includes concrete available appointment slots for a customer. You "
+        "may offer up to 2 of them as a single booking decision (see CTA "
+        "RULES exception)."
+        if allow_multi_slot_cta
+        else "\n\nThe slot-booking exception does NOT apply here — use exactly "
+        "one binary CTA or one specific question, no slot lists."
+    )
+
+    return f"""{_BASE_RUBRIC_RULES}
+
+CATEGORY VOICE for "{category_slug}": {voice_directive}
+(Also honor the specific voice.tone / vocab_allowed / vocab_taboo fields
+given in the CATEGORY context block below — the directive above sets the
+register, the context data supplies the exact words to use or avoid.)
+
+{_CTA_RULES}{slot_note}
+
+{FEW_SHOT_BLOCK}
+
+OUTPUT FORMAT — return ONLY a single JSON object, no markdown fences, no
+preamble, no text outside the JSON:
+{{"body": "<the message text>", "cta": "<short cta label, e.g. binary_yes_no|reply_stop|slot_pick|specific_question>", "rationale": "<1-2 sentences, internal logging only>", "send_as": "vera_or_merchant_on_behalf_will_be_set_by_the_system_ignore_this_field"}}
+
+Never leave "body" empty — an empty body is treated as malformed and
+penalized. Return nothing but the JSON object."""
+
+
+def _build_reply_system_prompt(category_slug: str | None) -> str:
+    voice_directive = _category_voice_directive(category_slug or "")
+    return f"""{_BASE_RUBRIC_RULES}
+
+CATEGORY VOICE for "{category_slug or "unknown"}": {voice_directive}
+
+{_CTA_RULES}
+
+CONVERSATION BEHAVIOR:
 - If the merchant gives explicit consent/intent ("yes", "let's do it", "go
   ahead", "sounds good"), do NOT ask another qualifying question — switch
   immediately to confirming the concrete next step or action taken.
 - If the merchant is hostile or asks you to stop, do not argue or re-pitch;
-  either apologize briefly and offer to stop, or end the conversation if they
-  explicitly asked you to stop messaging them. If they go off-topic (e.g. ask
-  an unrelated question), politely redirect to what you can actually help with
-  without being dismissive.
+  apologize briefly and offer to stop, or end if they explicitly asked to
+  stop. If they go off-topic, politely redirect without being dismissive.
 
-OUTPUT FORMAT — you must return ONLY a single JSON object, no markdown fences,
-no preamble, no explanation outside the JSON. For a PROACTIVE message:
-{"body": "<the message text>", "cta": "<short cta label, e.g. open_ended|binary_yes_no|reply_stop>", "rationale": "<1-2 sentences on why this message, for internal logging only>", "send_as": "vera"}
+OUTPUT FORMAT — return ONLY a single JSON object, no markdown fences, no
+preamble. Exactly one of:
+{{"action": "send", "body": "<message text>", "cta": "<cta label>", "rationale": "<why>"}}
+{{"action": "wait", "wait_seconds": <integer>, "rationale": "<why>"}}
+{{"action": "end", "rationale": "<why>"}}
 
-For a REPLY, return exactly one of these three shapes:
-{"action": "send", "body": "<message text>", "cta": "<cta label>", "rationale": "<why>"}
-{"action": "wait", "wait_seconds": <integer>, "rationale": "<why>"}
-{"action": "end", "rationale": "<why>"}
-
-Never leave "body" empty when action is "send" — an empty body is treated as
-malformed and penalized. Return nothing but the JSON object."""
+Never leave "body" empty when action is "send". Return nothing but the JSON object."""
 
 
 class ComposerError(RuntimeError):
@@ -504,6 +885,8 @@ class EngagementComposer:
         ]
 
         lines = [
+            _format_anchor_block(category, trigger),
+            "",
             f"CATEGORY: {category.get('slug')}",
             f"  voice tone: {voice.get('tone', 'n/a')}",
             f"  vocab allowed: {voice.get('vocab_allowed', [])[:8]}",
@@ -547,16 +930,22 @@ class EngagementComposer:
         trigger: dict[str, Any],
         customer: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        allow_multi_slot_cta = bool(
+            customer and (trigger.get("payload", {}) or {}).get("available_slots")
+        )
+        system_prompt = _build_proactive_system_prompt(
+            category.get("slug", "unknown"), allow_multi_slot_cta
+        )
         context_block = self._format_context_block(
             category, merchant, trigger, customer
         )
         prompt = (
             "Compose ONE proactive message using the context below. "
-            "Follow the OUTPUT FORMAT for a PROACTIVE message exactly.\n\n"
+            "Follow the OUTPUT FORMAT exactly.\n\n"
             f"{context_block}"
         )
         try:
-            raw = await self.llm.compose(prompt, SYSTEM_PROMPT)
+            raw = await self.llm.compose(prompt, system_prompt)
         except LLMError as exc:
             raise ComposerError(f"LLM call failed: {exc}") from exc
 
@@ -565,11 +954,16 @@ class EngagementComposer:
         if not body:
             raise ComposerError("LLM returned an empty body for a proactive message")
 
+        # send_as is a structural fact (brief §5), not a creative choice —
+        # determined deterministically from whether this is customer-facing,
+        # never trusted to the model's own JSON output.
+        send_as = "merchant_on_behalf" if customer else "vera"
+
         return {
             "body": body,
             "cta": parsed.get("cta") or "open_ended",
             "rationale": parsed.get("rationale") or "",
-            "send_as": parsed.get("send_as") or "vera",
+            "send_as": send_as,
         }
 
     # ---- reactive (reply) ------------------------------------------------- #
@@ -598,17 +992,13 @@ class EngagementComposer:
         if any(p in normalized for p in explicit_stop_phrases):
             return "explicit_stop"
 
-        # Same exact incoming text seen before from this conversation ->
-        # likely a canned auto-reply loop. Allow the first occurrence through
-        # (bot gets one attempt per challenge-brief.md Pattern B), force end
-        # from the second repeat onward.
         prior_incoming = [
             t["message"].strip().lower()
             for t in history
             if t.get("from_role") not in ("vera", "bot")
         ]
         repeat_count = sum(1 for m in prior_incoming if m == normalized)
-        if repeat_count >= 1:  # this exact text has already appeared once before
+        if repeat_count >= 1:
             return "repeated_auto_reply"
 
         return None
@@ -640,7 +1030,10 @@ class EngagementComposer:
             }
 
         identity = (merchant or {}).get("identity", {})
-        voice = (category or {}).get("voice", {})
+        category_slug = (merchant or {}).get("category_slug") or (category or {}).get(
+            "slug"
+        )
+        system_prompt = _build_reply_system_prompt(category_slug)
         history_lines = "\n".join(
             f"  [{t['from_role']}] {t['message']}" for t in history[-6:]
         )
@@ -663,18 +1056,16 @@ class EngagementComposer:
 
         prompt = (
             "Decide the next action for this ongoing conversation. Follow the "
-            "OUTPUT FORMAT for a REPLY exactly (action: send | wait | end).\n\n"
+            "OUTPUT FORMAT exactly (action: send | wait | end).\n\n"
             f"MERCHANT: {identity.get('name', 'unknown')} "
-            f"(languages: {identity.get('languages', [])})\n"
-            f"CATEGORY VOICE: tone={voice.get('tone', 'n/a')}, "
-            f"taboo words: {voice.get('vocab_taboo', voice.get('taboos', []))}\n\n"
+            f"(languages: {identity.get('languages', [])})\n\n"
             f"CONVERSATION SO FAR (turn {turn_number}):\n{history_lines}\n\n"
             f'LATEST MESSAGE FROM THEM: "{message}"\n\n'
             + ("\n".join(hints) + "\n\n" if hints else "")
         )
 
         try:
-            raw = await self.llm.compose(prompt, SYSTEM_PROMPT)
+            raw = await self.llm.compose(prompt, system_prompt)
             parsed = _extract_json(raw)
         except (LLMError, ComposerError) as exc:
             logger.warning("compose_reply falling back to 'wait': %s", exc)
@@ -725,7 +1116,7 @@ COMPOSER = EngagementComposer(get_llm_provider())
 
 
 # =============================================================================
-# PHASE 2 — POST /v1/tick
+# PHASE 2 — POST /v1/tick (unchanged)
 # =============================================================================
 
 
@@ -738,12 +1129,6 @@ MAX_ACTIONS_PER_TICK = 20
 
 
 async def _compose_action_for_trigger(trigger_id: str) -> dict[str, Any] | None:
-    """
-    Resolve trigger -> merchant -> category (+ optional customer), call the
-    composer, and shape the result into the /v1/tick action schema. Returns
-    None (never raises) if anything is missing or the composer fails, so one
-    bad trigger can never take down the whole tick.
-    """
     trigger = _get_context("trigger", trigger_id)
     if not trigger:
         logger.info("tick: trigger %s not found in CONTEXT_STORE, skipping", trigger_id)
@@ -825,49 +1210,80 @@ async def _compose_action_for_trigger(trigger_id: str) -> dict[str, Any] | None:
     }
 
 
+TICK_TIME_BUDGET_SECONDS = 25.0  # leave margin under the judge's 30s hard cap
+
+
 @app.post("/v1/tick")
 async def tick(body: TickRequest) -> dict[str, Any]:
     """
-    Proactive messaging (testing-brief §2.2). Must return within 30s even
-    under a 20-trigger tick; each composition runs concurrently and the
-    whole batch is wrapped in an overall timeout so a stuck LLM call can
-    never blow the judge's per-call budget — worst case we return
-    {"actions": []} and pick it back up next tick.
+    Proactive messaging (testing-brief §2.2).
+
+    Processes triggers one at a time against a shared deadline rather than
+    `asyncio.gather` under one outer `wait_for`: with a rate-limited LLM
+    provider (see GroqProvider._rate_limiter), concurrent calls would just
+    queue up behind the same token budget anyway, so gather buys nothing —
+    and critically, gather-inside-wait_for throws away every result
+    (including ones that already succeeded) the moment the timeout fires.
+    This loop instead tracks a real deadline and returns whatever it
+    managed to compose the instant that deadline gets tight, so a slow
+    trigger costs you that one trigger, never the whole batch. Any trigger
+    not attempted this cycle simply isn't marked as sent (no suppression_key
+    recorded for it), so it's fair game again on the next tick.
     """
     trigger_ids = body.available_triggers[:MAX_ACTIONS_PER_TICK]
     if not trigger_ids:
         return {"actions": []}
 
-    try:
-        import asyncio
-
-        results = await asyncio.wait_for(
-            asyncio.gather(
-                *(_compose_action_for_trigger(tid) for tid in trigger_ids),
-                return_exceptions=True,
-            ),
-            timeout=25.0,
-        )
-    except TimeoutError:
-        logger.warning(
-            "tick: overall batch exceeded 25s budget, returning no actions this cycle"
-        )
-        return {"actions": []}
-
+    deadline = time.monotonic() + TICK_TIME_BUDGET_SECONDS
     actions: list[dict[str, Any]] = []
-    for tid, result in zip(trigger_ids, results):
-        if isinstance(result, Exception):
-            logger.error("tick: unexpected error composing trigger %s: %s", tid, result)
+    attempted = 0
+
+    for trigger_id in trigger_ids:
+        remaining = deadline - time.monotonic()
+        if remaining <= 1.0:
+            logger.warning(
+                "tick: time budget exhausted after %d/%d triggers attempted, "
+                "returning %d partial action(s) — remaining triggers will be "
+                "retried on a future tick",
+                attempted,
+                len(trigger_ids),
+                len(actions),
+            )
+            break
+
+        attempted += 1
+        try:
+            result = await asyncio.wait_for(
+                _compose_action_for_trigger(trigger_id), timeout=remaining
+            )
+        except TimeoutError:
+            logger.warning(
+                "tick: trigger %s did not finish within the remaining tick budget "
+                "(%.1fs left) — stopping here, will retry next tick",
+                trigger_id,
+                remaining,
+            )
+            break
+        except Exception as exc:  # noqa: BLE001 - one bad trigger must never sink the tick
+            logger.error(
+                "tick: unexpected error composing trigger %s: %s", trigger_id, exc
+            )
             continue
+
         if result is not None:
             actions.append(result)
 
-    logger.info("tick: %d/%d triggers produced a send", len(actions), len(trigger_ids))
+    logger.info(
+        "tick: %d/%d triggers attempted, %d produced a send",
+        attempted,
+        len(trigger_ids),
+        len(actions),
+    )
     return {"actions": actions[:MAX_ACTIONS_PER_TICK]}
 
 
 # =============================================================================
-# PHASE 2 — POST /v1/reply
+# PHASE 2 — POST /v1/reply (unchanged)
 # =============================================================================
 
 
@@ -883,14 +1299,6 @@ class ReplyRequest(BaseModel):
 
 @app.post("/v1/reply")
 async def reply(body: ReplyRequest) -> dict[str, Any]:
-    """
-    Reactive messaging (testing-brief §2.3). Handles both conversations the
-    bot started (via /v1/tick, so CONVERSATION_META already has merchant/
-    category context) and conversations the judge starts directly against
-    /v1/reply (auto_reply_hell / intent_transition / hostile replay
-    scenarios) — in the latter case merchant_id arrives on the request
-    itself and we bootstrap the meta on first turn.
-    """
     meta = CONVERSATION_META.get(body.conversation_id)
     merchant_id = body.merchant_id or (meta or {}).get("merchant_id")
     customer_id = body.customer_id or (meta or {}).get("customer_id")
@@ -925,7 +1333,7 @@ async def reply(body: ReplyRequest) -> dict[str, Any]:
         category=category,
         merchant=merchant,
         customer=customer,
-        history=history[:-1],  # history *before* this incoming message
+        history=history[:-1],
         message=body.message,
         turn_number=body.turn_number,
     )
