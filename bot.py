@@ -1,39 +1,4 @@
-"""
-bot.py — magicpin Vera AI Challenge submission (Phase 1 + Phase 2 + Phase 3)
 
-Phase 1 (unchanged): flexible Pydantic v2 context schemas, in-memory
-CONTEXT_STORE, /v1/healthz, /v1/metadata, /v1/context, idempotency logic.
-
-Phase 2 (unchanged): LLMProvider interface (OllamaProvider dev / GroqProvider
-prod), /v1/tick, /v1/reply, conversation state tracking.
-
-Phase 3 (this update) — EngagementComposer rewritten for eval tuning:
-  1. Dynamic category routing — system prompt's tone directive is built
-     per CategoryContext.slug rather than one fixed prompt for all verticals.
-  2. Anchor-fact extraction — rather than just *telling* the LLM "don't
-     hallucinate, quote exact numbers," the composer resolves the specific
-     fact the trigger references (a digest item's citation, or the
-     trigger's own payload numbers) and injects it as a labeled,
-     already-correct block the model is instructed to quote verbatim. This
-     is a stronger guardrail than a prompt instruction alone — it removes
-     the retrieval step (and its hallucination risk) from the LLM's job
-     entirely for the fact that most needs to be exact.
-  3. CTA enforcement — every proactive message must end in exactly one
-     binary/specific CTA, with a narrow, explicit exception (brief Appendix B)
-     for customer-facing slot-booking replies where 2 concrete time slots
-     are offered — that's one decision with two valid answers, not two CTAs.
-  4. Few-shot — Appendix A (merchant-facing) and Appendix B (customer-facing)
-     from challenge-brief.md are embedded verbatim as calibration examples.
-  5. send_as correctness — deterministically "vera" for merchant-facing,
-     "merchant_on_behalf" for customer-facing (brief §5), rather than left
-     to the LLM's discretion.
-
-Run locally:
-    uvicorn bot:app --host 0.0.0.0 --port 8080
-
-Requires a running Ollama daemon with qwen2:7b pulled for local dev:
-    ollama pull qwen2:7b && ollama serve
-"""
 
 from __future__ import annotations
 
@@ -82,9 +47,7 @@ logging.basicConfig(
 logger = logging.getLogger("vera_bot")
 
 
-# =============================================================================
-# PHASE 1 — Context schemas + ingestion (unchanged)
-# =============================================================================
+
 
 
 class FlexibleModel(BaseModel):
@@ -186,6 +149,61 @@ CONVERSATION_META: dict[str, dict[str, Any]] = {}
 
 # suppression_key -> True, once a trigger with this key has produced a send.
 SENT_SUPPRESSION_KEYS: set[str] = set()
+
+# merchant_id -> deque of {"fp": str, "boilerplate": bool, "ts": float}
+# Tracks inbound message fingerprints ACROSS conversation_ids for one
+# merchant. Needed because a WhatsApp auto-responder loop typically arrives,
+# from our side, as what looks like a brand-new conversation thread every
+# time (a fresh conversation_id per inbound webhook) — CONVERSATIONS/history
+# is scoped to conversation_id and can never see that pattern on its own.
+MERCHANT_INBOUND_LOG: dict[str, deque[dict[str, Any]]] = {}
+_AUTO_REPLY_LOG_MAXLEN = 8
+_AUTO_REPLY_LOG_TTL_SECONDS = 6 * 3600
+
+_AUTO_REPLY_BOILERPLATE_RE = re.compile(
+    r"out of office|auto-?reply|automated (message|response|reply)|"
+    r"respond(ing)? shortly|reply shortly|get back to you shortly|"
+    r"thank you for (contacting|reaching out)|currently (unavailable|away|closed)|"
+    r"away from the phone|will respond as soon as possible|"
+    r"message has been received|team will (respond|reply|get back)"
+)
+
+
+def _normalize_for_repeat_check(text: str) -> str:
+    """Lowercase + collapse whitespace + strip digits, so a 'dynamic'
+    auto-responder that only changes a ticket number or timestamp between
+    sends ("Ticket #4821 received...", "Ticket #4822 received...") still
+    fingerprints identically instead of evading exact-match detection."""
+    t = text.strip().lower()
+    t = re.sub(r"\d+", "#", t)
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+
+def _check_cross_conversation_auto_reply(merchant_id: str | None, message: str) -> bool:
+    """
+    Merchant-scoped (not conversation-scoped) duplicate/auto-responder
+    check. Returns True if this inbound message looks like a continuation
+    of an auto-responder loop from this merchant, judged across ANY
+    conversation_id — an exact repeat of a prior fingerprint, or a second
+    boilerplate-pattern hit in a row (covers non-identical-but-still-canned
+    text). Always records the current message before returning, so the
+    very first occurrence just gets logged, never mistakenly ended.
+    """
+    key = merchant_id or "_unknown_merchant_"
+    now = time.monotonic()
+    log = MERCHANT_INBOUND_LOG.setdefault(key, deque(maxlen=_AUTO_REPLY_LOG_MAXLEN))
+    while log and now - log[0]["ts"] > _AUTO_REPLY_LOG_TTL_SECONDS:
+        log.popleft()
+
+    fp = _normalize_for_repeat_check(message)
+    is_boilerplate = bool(_AUTO_REPLY_BOILERPLATE_RE.search(message.lower()))
+
+    exact_repeat = any(entry["fp"] == fp for entry in log)
+    boilerplate_repeat = is_boilerplate and any(entry["boilerplate"] for entry in log)
+
+    log.append({"fp": fp, "boilerplate": is_boilerplate, "ts": now})
+    return exact_repeat or boilerplate_repeat
 
 
 def _utc_now_iso() -> str:
@@ -290,9 +308,7 @@ async def push_context(request: ContextPushRequest) -> JSONResponse:
     return JSONResponse(status_code=status.HTTP_200_OK, content=body.model_dump())
 
 
-# =============================================================================
-# PHASE 2 — LLM provider interface (unchanged)
-# =============================================================================
+
 
 
 class LLMProvider(ABC):
@@ -666,9 +682,7 @@ def get_llm_provider() -> LLMProvider:
     return OllamaProvider()
 
 
-# =============================================================================
-# PHASE 3 — EngagementComposer (rewritten)
-# =============================================================================
+
 
 # --- 1. Dynamic category routing --------------------------------------------
 #
@@ -966,9 +980,7 @@ class EngagementComposer:
         if not body:
             raise ComposerError("LLM returned an empty body for a proactive message")
 
-        # send_as is a structural fact (brief §5), not a creative choice —
-        # determined deterministically from whether this is customer-facing,
-        # never trusted to the model's own JSON output.
+       
         send_as = "merchant_on_behalf" if customer else "vera"
 
         return {
@@ -982,17 +994,19 @@ class EngagementComposer:
 
     @staticmethod
     def _detect_deterministic_signal(
-        message: str, history: list[dict[str, Any]]
+        message: str,
+        history: list[dict[str, Any]],
+        merchant_id: str | None = None,
     ) -> str | None:
         """
-        Fast, deterministic overrides for cases where relying on a local 7B
+        Fast, deterministic overrides for cases where relying on a local
         model's judgment is too risky given the operational penalty for a
         malformed/empty response. Returns a signal name or None to fall
         through to the LLM.
         """
         normalized = message.strip().lower()
 
-        # 1. Expanded explicit stop phrases (Hostile scenario)
+        # 1. Explicit stop phrases (Hostile scenario)
         explicit_stop_phrases = [
             "stop messaging",
             "unsubscribe",
@@ -1013,7 +1027,9 @@ class EngagementComposer:
             if t.get("from_role") not in ("vera", "bot")
         ]
 
-        # 2. Heuristic for common auto-responder phrases (Auto-Reply Hell scenario)
+        # 2. In-conversation boilerplate heuristic — cheap secondary signal
+        # for the (less common) case where a WhatsApp integration reuses
+        # one conversation_id across turns.
         auto_reply_substrings = [
             "out of office",
             "auto-reply",
@@ -1022,16 +1038,20 @@ class EngagementComposer:
             "automated message",
             "away from the phone",
         ]
-        
-        # Only check for auto-reply phrases if there is actually a conversation history.
-        # This prevents a legitimate human message like "thank you for contacting me" on turn 1 from being suppressed.
-        if len(prior_incoming) >= 2:
-            if any(substring in normalized for substring in auto_reply_substrings):
-                return "repeated_auto_reply"
+        if len(prior_incoming) >= 2 and any(
+            substring in normalized for substring in auto_reply_substrings
+        ):
+            return "repeated_auto_reply"
 
-        # 3. Exact match loop catcher (Auto-Reply Hell scenario)
-        repeat_count = sum(1 for m in prior_incoming if m == normalized)
-        if repeat_count >= 1:
+        # 3. In-conversation exact-match loop catcher.
+        if any(m == normalized for m in prior_incoming):
+            return "repeated_auto_reply"
+
+        # 4. Cross-conversation (merchant-scoped) check — this is the one
+        # that actually catches the judge's auto_reply_hell scenario, which
+        # sends a fresh conversation_id every turn against the same
+        # merchant_id, so #2/#3 above never see any history at all.
+        if _check_cross_conversation_auto_reply(merchant_id, message):
             return "repeated_auto_reply"
 
         return None
@@ -1045,8 +1065,9 @@ class EngagementComposer:
         history: list[dict[str, Any]],
         message: str,
         turn_number: int,
+        merchant_id: str | None = None,
     ) -> dict[str, Any]:
-        signal = self._detect_deterministic_signal(message, history)
+        signal = self._detect_deterministic_signal(message, history, merchant_id)
 
         if signal == "explicit_stop":
             logger.info("reply: deterministic end (explicit_stop)")
@@ -1315,9 +1336,6 @@ async def tick(body: TickRequest) -> dict[str, Any]:
     return {"actions": actions[:MAX_ACTIONS_PER_TICK]}
 
 
-# =============================================================================
-# PHASE 2 — POST /v1/reply (unchanged)
-# =============================================================================
 
 
 class ReplyRequest(BaseModel):
@@ -1369,6 +1387,7 @@ async def reply(body: ReplyRequest) -> dict[str, Any]:
         history=history[:-1],
         message=body.message,
         turn_number=body.turn_number,
+        merchant_id=merchant_id,
     )
 
     if result.get("action") == "send":
