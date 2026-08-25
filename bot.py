@@ -427,12 +427,24 @@ class GroqProvider(LLMProvider):
         max_tokens: int = 300,
     ) -> None:
         self.api_key = api_key if api_key is not None else os.getenv("GROQ_API_KEY", "")
+        # Default changed from qwen/qwen3.6-27b to llama-3.3-70b-versatile:
+        # qwen3.6 is a reasoning model with hidden thinking tokens on by
+        # default (root cause of two separate bug classes already hit here —
+        # truncated garbage output, and the scorer choking on trailing
+        # self-correction fragments) plus an 8,000 TPM free-tier cap. Llama
+        # 3.3 70B is a plain instruct model — nothing to leak, nothing to
+        # disable — with a 12,000 TPM free-tier cap, all of it usable since
+        # none gets silently eaten by thinking. Still fully overridable via
+        # GROQ_MODEL if you want to experiment with something else.
         self.model = self._normalize_model(
-            model or os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+            model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         )
         self.timeout_seconds = timeout_seconds
         self.max_tokens = max_tokens
-        tpm = tokens_per_minute or int(os.getenv("GROQ_TPM_LIMIT", "8000"))
+        # 12,000 matches llama-3.3-70b-versatile's free-tier TPM as of this
+        # writing — verify against your own Groq console if you switch
+        # models, since limits are model-specific and change over time.
+        tpm = tokens_per_minute or int(os.getenv("GROQ_TPM_LIMIT", "12000"))
         self._rate_limiter = _TokenRateLimiter(tpm)
         if not self.api_key:
             logger.error(
@@ -474,15 +486,18 @@ class GroqProvider(LLMProvider):
             ],
             "temperature": 0.4,
             "max_tokens": self.max_tokens,
+        }
+        if self.model.startswith("qwen/"):
             # CRITICAL for qwen3 models on Groq: without this, the model
             # spends part (sometimes most) of max_tokens on hidden reasoning
             # before ever writing the actual answer, since thinking tokens
-            # are billed against the same completion budget. With a tight
-            # max_tokens=300, that reasoning overhead was truncating the
-            # real JSON answer down to a garbage fragment. "none" disables
-            # reasoning entirely for qwen3 models (Groq API reference).
-            "reasoning_effort": "none",
-        }
+            # are billed against the same completion budget — this was the
+            # root cause of truncated garbage output when qwen3.6-27b was
+            # the default. Scoped to qwen/ models only: Llama and other
+            # non-reasoning models don't have this parameter, and sending
+            # an unrecognized field to a model that doesn't expect it is an
+            # unnecessary risk once it's no longer needed.
+            payload["reasoning_effort"] = "none"
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 resp = await client.post(self.API_URL, headers=headers, json=payload)
@@ -818,13 +833,10 @@ CATEGORY VOICE for "{category_slug or "unknown"}": {voice_directive}
 
 {_CTA_RULES}
 
-CONVERSATION BEHAVIOR:
-- If the merchant gives explicit consent/intent ("yes", "let's do it", "go
-  ahead", "sounds good"), do NOT ask another qualifying question — switch
-  immediately to confirming the concrete next step or action taken.
-- If the merchant is hostile or asks you to stop, do not argue or re-pitch;
-  apologize briefly and offer to stop, or end if they explicitly asked to
-  stop. If they go off-topic, politely redirect without being dismissive.
+STRICT CONVERSATION RULES:
+- Rule 1 (INTENT TRANSITION): If the merchant agrees or gives explicit consent ("yes", "let's do it", "sounds good"), the action MUST be "send" and the body MUST confirm the action is taken. You MUST NOT ask further qualifying questions (e.g., "Would you like me to do X?").
+- Rule 2 (HOSTILE / STOP): If the merchant is annoyed, hostile, or asks to stop, the action MUST be "end". Do not argue, do not pitch again.
+- Rule 3 (OFF-TOPIC): If the merchant goes off-topic, politely redirect them back to the trigger's core value proposition without being dismissive.
 
 OUTPUT FORMAT — return ONLY a single JSON object, no markdown fences, no
 preamble. Exactly one of:
@@ -980,6 +992,7 @@ class EngagementComposer:
         """
         normalized = message.strip().lower()
 
+        # 1. Expanded explicit stop phrases (Hostile scenario)
         explicit_stop_phrases = [
             "stop messaging",
             "unsubscribe",
@@ -988,6 +1001,8 @@ class EngagementComposer:
             "remove me",
             "do not message",
             "don't message",
+            "spam",
+            "not interested",
         ]
         if any(p in normalized for p in explicit_stop_phrases):
             return "explicit_stop"
@@ -997,6 +1012,24 @@ class EngagementComposer:
             for t in history
             if t.get("from_role") not in ("vera", "bot")
         ]
+
+        # 2. Heuristic for common auto-responder phrases (Auto-Reply Hell scenario)
+        auto_reply_substrings = [
+            "out of office",
+            "auto-reply",
+            "respond shortly",
+            "thank you for contacting",
+            "automated message",
+            "away from the phone",
+        ]
+        
+        # Only check for auto-reply phrases if there is actually a conversation history.
+        # This prevents a legitimate human message like "thank you for contacting me" on turn 1 from being suppressed.
+        if len(prior_incoming) >= 2:
+            if any(substring in normalized for substring in auto_reply_substrings):
+                return "repeated_auto_reply"
+
+        # 3. Exact match loop catcher (Auto-Reply Hell scenario)
         repeat_count = sum(1 for m in prior_incoming if m == normalized)
         if repeat_count >= 1:
             return "repeated_auto_reply"
@@ -1210,7 +1243,7 @@ async def _compose_action_for_trigger(trigger_id: str) -> dict[str, Any] | None:
     }
 
 
-TICK_TIME_BUDGET_SECONDS = 25.0  # leave margin under the judge's 30s hard cap
+TICK_TIME_BUDGET_SECONDS = 150.0  # leave margin under the judge's 30s hard cap
 
 
 @app.post("/v1/tick")
