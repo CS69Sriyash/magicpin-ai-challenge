@@ -6,29 +6,97 @@
     "register": "coach_to_member",
     "code_mix": "english_primary_some_hindi",
     "vocab_allowed": [
-      "footfall", "membership churn", "PT sessions", "PR (personal record)",
-      "1RM", "EMOM", "AMRAP", "split", "cut", "bulk", "BMR", "VO2max",
-      "functional", "HIIT", "CrossFit", "yoga", "pilates"
+      "footfall",
+      "membership churn",
+      "PT sessions",
+      "PR (personal record)",
+      "1RM",
+      "EMOM",
+      "AMRAP",
+      "split",
+      "cut",
+      "bulk",
+      "BMR",
+      "VO2max",
+      "functional",
+      "HIIT",
+      "CrossFit",
+      "yoga",
+      "pilates"
     ],
     "vocab_taboo": [
-      "guaranteed weight loss", "shred in 7 days", "miracle transformation",
+      "guaranteed weight loss",
+      "shred in 7 days",
+      "miracle transformation",
       "fastest results"
     ],
-    "salutation_examples": ["Hi {first_name}", "{gym_name} team", "Coach"],
+    "salutation_examples": [
+      "Hi {first_name}",
+      "{gym_name} team",
+      "Coach"
+    ],
     "tone_examples": [
       "Quick check — your weekday 7-9pm slot has been at 90%+ capacity all month",
       "Footfall pattern: April drop-off is normal; bookings recover by 2nd week May"
     ]
   },
   "offer_catalog": [
-    { "id": "gym_001", "title": "3 FREE Trial Classes", "value": "0", "audience": "new_user", "type": "free_trial" },
-    { "id": "gym_002", "title": "First Month @ ₹499", "value": "499", "audience": "new_user", "type": "service_at_price" },
-    { "id": "gym_003", "title": "Personal Training Demo @ ₹199", "value": "199", "audience": "new_user", "type": "service_at_price" },
-    { "id": "gym_004", "title": "Annual Membership @ ₹14,999 (save ₹6,000)", "value": "14999", "audience": "new_user", "type": "service_at_price" },
-    { "id": "gym_005", "title": "Couple/Family Plan @ ₹999/month", "value": "999", "audience": "new_user", "type": "service_at_price" },
-    { "id": "gym_006", "title": "Free Body Composition Analysis", "value": "0", "audience": "all", "type": "free_service" },
-    { "id": "gym_007", "title": "Refer-a-friend: 1 month free for both", "value": "free_addon", "audience": "repeat_user", "type": "free_addon" },
-    { "id": "gym_008", "title": "Yoga + Strength Combo @ ₹1,499/month", "value": "1499", "audience": "new_user", "type": "service_at_price" }
+    {
+      "id": "gym_001",
+      "title": "3 FREE Trial Classes",
+      "value": "0",
+      "audience": "new_user",
+      "type": "free_trial"
+    },
+    {
+      "id": "gym_002",
+      "title": "First Month @ ₹499",
+      "value": "499",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "gym_003",
+      "title": "Personal Training Demo @ ₹199",
+      "value": "199",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "gym_004",
+      "title": "Annual Membership @ ₹14,999 (save ₹6,000)",
+      "value": "14999",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "gym_005",
+      "title": "Couple/Family Plan @ ₹999/month",
+      "value": "999",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "gym_006",
+      "title": "Free Body Composition Analysis",
+      "value": "0",
+      "audience": "all",
+      "type": "free_service"
+    },
+    {
+      "id": "gym_007",
+      "title": "Refer-a-friend: 1 month free for both",
+      "value": "free_addon",
+      "audience": "repeat_user",
+      "type": "free_addon"
+    },
+    {
+      "id": "gym_008",
+      "title": "Yoga + Strength Combo @ ₹1,499/month",
+      "value": "1499",
+      "audience": "new_user",
+      "type": "service_at_price"
+    }
   ],
   "peer_stats": {
     "scope": "metro_neighbourhood_gyms_2026",
@@ -109,17 +177,54 @@
     }
   ],
   "seasonal_beats": [
-    { "month_range": "Jan", "note": "resolution surge — trial walk-ins 4x baseline; convert window" },
-    { "month_range": "Apr-Jun", "note": "lowest acquisition window — focus on retention, not acquisition" },
-    { "month_range": "Aug-Oct", "note": "wedding-prep + festival window — repeat clients return to shape up" },
-    { "month_range": "Nov-Dec", "note": "holiday slowdown — class density drops 25%; right time to renovate or pilot new programs" }
+    {
+      "month_range": "Jan",
+      "note": "resolution surge — trial walk-ins 4x baseline; convert window"
+    },
+    {
+      "month_range": "Apr-Jun",
+      "note": "lowest acquisition window — focus on retention, not acquisition"
+    },
+    {
+      "month_range": "Aug-Oct",
+      "note": "wedding-prep + festival window — repeat clients return to shape up"
+    },
+    {
+      "month_range": "Nov-Dec",
+      "note": "holiday slowdown — class density drops 25%; right time to renovate or pilot new programs"
+    }
   ],
   "trend_signals": [
-    { "query": "gym near me", "delta_yoy": 0.05, "segment_age": "all", "skew": "balanced" },
-    { "query": "personal trainer cost", "delta_yoy": 0.38, "segment_age": "30-50", "skew": "balanced" },
-    { "query": "yoga classes near me", "delta_yoy": 0.42, "segment_age": "25-55", "skew": "female" },
-    { "query": "weight loss program", "delta_yoy": 0.28, "segment_age": "30-50", "skew": "female" }
+    {
+      "query": "gym near me",
+      "delta_yoy": 0.05,
+      "segment_age": "all",
+      "skew": "balanced"
+    },
+    {
+      "query": "personal trainer cost",
+      "delta_yoy": 0.38,
+      "segment_age": "30-50",
+      "skew": "balanced"
+    },
+    {
+      "query": "yoga classes near me",
+      "delta_yoy": 0.42,
+      "segment_age": "25-55",
+      "skew": "female"
+    },
+    {
+      "query": "weight loss program",
+      "delta_yoy": 0.28,
+      "segment_age": "30-50",
+      "skew": "female"
+    }
   ],
-  "regulatory_authorities": ["FSSAI (for supplement sales)", "Local Municipal Corp (premises)"],
-  "professional_journals": ["Indian Journal of Sports Medicine"]
+  "regulatory_authorities": [
+    "FSSAI (for supplement sales)",
+    "Local Municipal Corp (premises)"
+  ],
+  "professional_journals": [
+    "Indian Journal of Sports Medicine"
+  ]
 }

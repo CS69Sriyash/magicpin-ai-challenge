@@ -6,15 +6,36 @@
     "register": "respectful_collegial",
     "code_mix": "hindi_english_natural",
     "vocab_allowed": [
-      "fluoride varnish", "scaling", "caries", "occlusion", "bruxism",
-      "endodontic", "periodontal", "implant", "aligner", "veneer",
-      "OPG", "IOPA", "RCT", "CAD/CAM", "zirconia", "PFM"
+      "fluoride varnish",
+      "scaling",
+      "caries",
+      "occlusion",
+      "bruxism",
+      "endodontic",
+      "periodontal",
+      "implant",
+      "aligner",
+      "veneer",
+      "OPG",
+      "IOPA",
+      "RCT",
+      "CAD/CAM",
+      "zirconia",
+      "PFM"
     ],
     "vocab_taboo": [
-      "guaranteed", "100% safe", "completely cure", "miracle", "best in city",
-      "doctor approved" ,"FDA-approved (use only when actually applicable)"
+      "guaranteed",
+      "100% safe",
+      "completely cure",
+      "miracle",
+      "best in city",
+      "doctor approved",
+      "FDA-approved (use only when actually applicable)"
     ],
-    "salutation_examples": ["Dr. {first_name}", "Doc"],
+    "salutation_examples": [
+      "Dr. {first_name}",
+      "Doc"
+    ],
     "tone_examples": [
       "Worth a look — JIDA Oct 2026 p.14",
       "This one likely affects your high-risk adult cohort",
@@ -22,14 +43,62 @@
     ]
   },
   "offer_catalog": [
-    { "id": "den_001", "title": "Dental Cleaning @ ₹299", "value": "299", "audience": "new_user", "type": "service_at_price" },
-    { "id": "den_002", "title": "Free Consultation", "value": "0", "audience": "new_user", "type": "free_service" },
-    { "id": "den_003", "title": "Teeth Whitening @ ₹1,499", "value": "1499", "audience": "new_user", "type": "service_at_price" },
-    { "id": "den_004", "title": "Root Canal @ ₹2,999 (single rooted)", "value": "2999", "audience": "new_user", "type": "service_at_price" },
-    { "id": "den_005", "title": "Free Smile Analysis + Digital Scan", "value": "0", "audience": "new_user", "type": "free_service" },
-    { "id": "den_006", "title": "Aligner Consultation @ ₹499", "value": "499", "audience": "new_user", "type": "service_at_price" },
-    { "id": "den_007", "title": "Pediatric Dental Checkup @ ₹199", "value": "199", "audience": "new_user", "type": "service_at_price" },
-    { "id": "den_008", "title": "Annual Family Dental Plan @ ₹4,999", "value": "4999", "audience": "repeat_user", "type": "membership" }
+    {
+      "id": "den_001",
+      "title": "Dental Cleaning @ ₹299",
+      "value": "299",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "den_002",
+      "title": "Free Consultation",
+      "value": "0",
+      "audience": "new_user",
+      "type": "free_service"
+    },
+    {
+      "id": "den_003",
+      "title": "Teeth Whitening @ ₹1,499",
+      "value": "1499",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "den_004",
+      "title": "Root Canal @ ₹2,999 (single rooted)",
+      "value": "2999",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "den_005",
+      "title": "Free Smile Analysis + Digital Scan",
+      "value": "0",
+      "audience": "new_user",
+      "type": "free_service"
+    },
+    {
+      "id": "den_006",
+      "title": "Aligner Consultation @ ₹499",
+      "value": "499",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "den_007",
+      "title": "Pediatric Dental Checkup @ ₹199",
+      "value": "199",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "den_008",
+      "title": "Annual Family Dental Plan @ ₹4,999",
+      "value": "4999",
+      "audience": "repeat_user",
+      "type": "membership"
+    }
   ],
   "peer_stats": {
     "scope": "metro_solo_practices_2026",
@@ -38,7 +107,7 @@
     "avg_views_30d": 1820,
     "avg_calls_30d": 12,
     "avg_directions_30d": 38,
-    "avg_ctr": 0.030,
+    "avg_ctr": 0.03,
     "avg_photos": 9,
     "avg_post_freq_days": 14,
     "retention_6mo_pct": 0.42
@@ -113,17 +182,56 @@
     }
   ],
   "seasonal_beats": [
-    { "month_range": "Nov-Feb", "note": "exam-stress bruxism spike — ortho consults rise 30% in 18-24 cohort" },
-    { "month_range": "Oct-Dec", "note": "wedding whitening peak — bookings 2x baseline; ladies' segment dominant" },
-    { "month_range": "Jan", "note": "new-year resolution surge — annual check-up bookings +40%" },
-    { "month_range": "Apr-Jun", "note": "school holiday window — pediatric appointments +50%" }
+    {
+      "month_range": "Nov-Feb",
+      "note": "exam-stress bruxism spike — ortho consults rise 30% in 18-24 cohort"
+    },
+    {
+      "month_range": "Oct-Dec",
+      "note": "wedding whitening peak — bookings 2x baseline; ladies' segment dominant"
+    },
+    {
+      "month_range": "Jan",
+      "note": "new-year resolution surge — annual check-up bookings +40%"
+    },
+    {
+      "month_range": "Apr-Jun",
+      "note": "school holiday window — pediatric appointments +50%"
+    }
   ],
   "trend_signals": [
-    { "query": "clear aligners delhi", "delta_yoy": 0.62, "segment_age": "28-45", "skew": "female" },
-    { "query": "teeth whitening price", "delta_yoy": 0.41, "segment_age": "all", "skew": "balanced" },
-    { "query": "dental implants near me", "delta_yoy": 0.18, "segment_age": "45-65", "skew": "male" },
-    { "query": "kids first dental visit", "delta_yoy": 0.27, "segment_age": "parents_25-40", "skew": "female" }
+    {
+      "query": "clear aligners delhi",
+      "delta_yoy": 0.62,
+      "segment_age": "28-45",
+      "skew": "female"
+    },
+    {
+      "query": "teeth whitening price",
+      "delta_yoy": 0.41,
+      "segment_age": "all",
+      "skew": "balanced"
+    },
+    {
+      "query": "dental implants near me",
+      "delta_yoy": 0.18,
+      "segment_age": "45-65",
+      "skew": "male"
+    },
+    {
+      "query": "kids first dental visit",
+      "delta_yoy": 0.27,
+      "segment_age": "parents_25-40",
+      "skew": "female"
+    }
   ],
-  "regulatory_authorities": ["Dental Council of India (DCI)", "Indian Dental Association (IDA)"],
-  "professional_journals": ["JIDA", "Indian Journal of Dental Research", "Dental Tribune India"]
+  "regulatory_authorities": [
+    "Dental Council of India (DCI)",
+    "Indian Dental Association (IDA)"
+  ],
+  "professional_journals": [
+    "JIDA",
+    "Indian Journal of Dental Research",
+    "Dental Tribune India"
+  ]
 }

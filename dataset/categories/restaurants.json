@@ -6,28 +6,91 @@
     "register": "fellow_operator",
     "code_mix": "hindi_english_natural",
     "vocab_allowed": [
-      "footfall", "covers", "AOV", "RPC", "table turnover", "reservations",
-      "GRO", "weekend brunch", "happy hour", "thali", "biryani", "tandoor"
+      "footfall",
+      "covers",
+      "AOV",
+      "RPC",
+      "table turnover",
+      "reservations",
+      "GRO",
+      "weekend brunch",
+      "happy hour",
+      "thali",
+      "biryani",
+      "tandoor"
     ],
     "vocab_taboo": [
-      "best food in city", "guaranteed packed house", "miracle marketing",
+      "best food in city",
+      "guaranteed packed house",
+      "miracle marketing",
       "viral guarantee"
     ],
-    "salutation_examples": ["Hi {chef_or_owner_first_name}", "{restaurant_name} team"],
+    "salutation_examples": [
+      "Hi {chef_or_owner_first_name}",
+      "{restaurant_name} team"
+    ],
     "tone_examples": [
       "Quick one — IPL match nights have been 1.5x your weekday avg this season",
       "Spotted: 'biryani delivery' searches in your sublocality up 28% this week"
     ]
   },
   "offer_catalog": [
-    { "id": "res_001", "title": "Flat 30% OFF on total bill (limit ₹500)", "value": "30%", "audience": "new_user", "type": "percentage_discount" },
-    { "id": "res_002", "title": "Buy 1 Pizza Get 1 Free (Tue-Thu)", "value": "BOGO", "audience": "new_user", "type": "bogo" },
-    { "id": "res_003", "title": "Weekday Lunch Thali @ ₹149", "value": "149", "audience": "new_user", "type": "service_at_price" },
-    { "id": "res_004", "title": "Free Starter on orders > ₹1,200", "value": "free_addon", "audience": "new_user", "type": "free_addon" },
-    { "id": "res_005", "title": "Match-night Combo @ ₹399 (food + drink)", "value": "399", "audience": "new_user", "type": "service_at_price" },
-    { "id": "res_006", "title": "Family Sunday Brunch @ ₹699/pax", "value": "699", "audience": "new_user", "type": "service_at_price" },
-    { "id": "res_007", "title": "Free Delivery > ₹500", "value": "free_delivery", "audience": "new_user", "type": "free_addon" },
-    { "id": "res_008", "title": "Birthday: Free Cake on parties of 6+", "value": "free_addon", "audience": "all", "type": "free_addon" }
+    {
+      "id": "res_001",
+      "title": "Flat 30% OFF on total bill (limit ₹500)",
+      "value": "30%",
+      "audience": "new_user",
+      "type": "percentage_discount"
+    },
+    {
+      "id": "res_002",
+      "title": "Buy 1 Pizza Get 1 Free (Tue-Thu)",
+      "value": "BOGO",
+      "audience": "new_user",
+      "type": "bogo"
+    },
+    {
+      "id": "res_003",
+      "title": "Weekday Lunch Thali @ ₹149",
+      "value": "149",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "res_004",
+      "title": "Free Starter on orders > ₹1,200",
+      "value": "free_addon",
+      "audience": "new_user",
+      "type": "free_addon"
+    },
+    {
+      "id": "res_005",
+      "title": "Match-night Combo @ ₹399 (food + drink)",
+      "value": "399",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "res_006",
+      "title": "Family Sunday Brunch @ ₹699/pax",
+      "value": "699",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "res_007",
+      "title": "Free Delivery > ₹500",
+      "value": "free_delivery",
+      "audience": "new_user",
+      "type": "free_addon"
+    },
+    {
+      "id": "res_008",
+      "title": "Birthday: Free Cake on parties of 6+",
+      "value": "free_addon",
+      "audience": "all",
+      "type": "free_addon"
+    }
   ],
   "peer_stats": {
     "scope": "metro_casual_dining_2026",
@@ -100,19 +163,66 @@
     }
   ],
   "seasonal_beats": [
-    { "month_range": "Mar-Apr", "note": "IPL season — match-night promos on Tue/Wed/Thu; not weekends" },
-    { "month_range": "Oct-Nov", "note": "Diwali corporate gifting + family-feast bookings" },
-    { "month_range": "Dec", "note": "Christmas + New Year — set menu sales 3x baseline" },
-    { "month_range": "Jul-Aug", "note": "monsoon delivery surge; rain-day discount window" },
-    { "month_range": "Feb 14", "note": "Valentine's prix-fixe — book starting 2 weeks prior" }
+    {
+      "month_range": "Mar-Apr",
+      "note": "IPL season — match-night promos on Tue/Wed/Thu; not weekends"
+    },
+    {
+      "month_range": "Oct-Nov",
+      "note": "Diwali corporate gifting + family-feast bookings"
+    },
+    {
+      "month_range": "Dec",
+      "note": "Christmas + New Year — set menu sales 3x baseline"
+    },
+    {
+      "month_range": "Jul-Aug",
+      "note": "monsoon delivery surge; rain-day discount window"
+    },
+    {
+      "month_range": "Feb 14",
+      "note": "Valentine's prix-fixe — book starting 2 weeks prior"
+    }
   ],
   "trend_signals": [
-    { "query": "biryani near me", "delta_yoy": 0.18, "segment_age": "all", "skew": "balanced" },
-    { "query": "weekday lunch thali", "delta_yoy": 0.34, "segment_age": "office_25-45", "skew": "balanced" },
-    { "query": "sugar free dessert", "delta_yoy": 0.52, "segment_age": "28-45", "skew": "balanced" },
-    { "query": "match night offer", "delta_yoy": 0.65, "segment_age": "20-40", "skew": "male" },
-    { "query": "small party catering", "delta_yoy": 0.22, "segment_age": "30-50", "skew": "female" }
+    {
+      "query": "biryani near me",
+      "delta_yoy": 0.18,
+      "segment_age": "all",
+      "skew": "balanced"
+    },
+    {
+      "query": "weekday lunch thali",
+      "delta_yoy": 0.34,
+      "segment_age": "office_25-45",
+      "skew": "balanced"
+    },
+    {
+      "query": "sugar free dessert",
+      "delta_yoy": 0.52,
+      "segment_age": "28-45",
+      "skew": "balanced"
+    },
+    {
+      "query": "match night offer",
+      "delta_yoy": 0.65,
+      "segment_age": "20-40",
+      "skew": "male"
+    },
+    {
+      "query": "small party catering",
+      "delta_yoy": 0.22,
+      "segment_age": "30-50",
+      "skew": "female"
+    }
   ],
-  "regulatory_authorities": ["FSSAI", "Local Health Department", "GST Council"],
-  "professional_journals": ["FoodService India", "Hospitality Bizz"]
+  "regulatory_authorities": [
+    "FSSAI",
+    "Local Health Department",
+    "GST Council"
+  ],
+  "professional_journals": [
+    "FoodService India",
+    "Hospitality Bizz"
+  ]
 }

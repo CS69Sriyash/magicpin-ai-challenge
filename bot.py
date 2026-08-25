@@ -1243,7 +1243,7 @@ async def _compose_action_for_trigger(trigger_id: str) -> dict[str, Any] | None:
     }
 
 
-TICK_TIME_BUDGET_SECONDS = 150.0  # leave margin under the judge's 30s hard cap
+TICK_TIME_BUDGET_SECONDS = 25.0  # leave margin under the judge's 30s hard cap
 
 
 @app.post("/v1/tick")

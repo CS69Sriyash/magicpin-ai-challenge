@@ -6,28 +6,91 @@
     "register": "neighbourhood_pharmacist",
     "code_mix": "hindi_english_natural",
     "vocab_allowed": [
-      "OTC", "schedule H", "schedule X", "generic", "branded", "molecule",
-      "MRP", "expiry", "batch", "PCR retail", "pharmacist counsel"
+      "OTC",
+      "schedule H",
+      "schedule X",
+      "generic",
+      "branded",
+      "molecule",
+      "MRP",
+      "expiry",
+      "batch",
+      "PCR retail",
+      "pharmacist counsel"
     ],
     "vocab_taboo": [
-      "miracle cure", "guaranteed result", "100% safe", "doctor recommended (without disclosure)",
+      "miracle cure",
+      "guaranteed result",
+      "100% safe",
+      "doctor recommended (without disclosure)",
       "best price (without supporting data)"
     ],
-    "salutation_examples": ["Hi {pharmacist_name}", "{pharmacy_name} team"],
+    "salutation_examples": [
+      "Hi {pharmacist_name}",
+      "{pharmacy_name} team"
+    ],
     "tone_examples": [
       "Quick check — your repeat-prescription customer count is up 18% this month",
       "Heads up: a generic alternative for {molecule} just got approved — likely 30% lower MRP"
     ]
   },
   "offer_catalog": [
-    { "id": "phr_001", "title": "Flat 20% OFF on medicines", "value": "20%", "audience": "new_user", "type": "percentage_discount" },
-    { "id": "phr_002", "title": "Free Home Delivery > ₹499", "value": "free_delivery", "audience": "new_user", "type": "free_addon" },
-    { "id": "phr_003", "title": "Annual Health Card @ ₹399 (15% off all year)", "value": "399", "audience": "repeat_user", "type": "membership" },
-    { "id": "phr_004", "title": "Free BP & Sugar Check", "value": "0", "audience": "all", "type": "free_service" },
-    { "id": "phr_005", "title": "Senior Citizen 15% OFF (60+ age)", "value": "15%", "audience": "senior", "type": "percentage_discount" },
-    { "id": "phr_006", "title": "Diabetic Care Combo: Glucometer + 50 strips @ ₹999", "value": "999", "audience": "new_user", "type": "service_at_price" },
-    { "id": "phr_007", "title": "Free Pharmacist Consultation (10 min)", "value": "0", "audience": "all", "type": "free_service" },
-    { "id": "phr_008", "title": "Subscription refill reminder + delivery (chronic Rx)", "value": "0", "audience": "repeat_user", "type": "free_service" }
+    {
+      "id": "phr_001",
+      "title": "Flat 20% OFF on medicines",
+      "value": "20%",
+      "audience": "new_user",
+      "type": "percentage_discount"
+    },
+    {
+      "id": "phr_002",
+      "title": "Free Home Delivery > ₹499",
+      "value": "free_delivery",
+      "audience": "new_user",
+      "type": "free_addon"
+    },
+    {
+      "id": "phr_003",
+      "title": "Annual Health Card @ ₹399 (15% off all year)",
+      "value": "399",
+      "audience": "repeat_user",
+      "type": "membership"
+    },
+    {
+      "id": "phr_004",
+      "title": "Free BP & Sugar Check",
+      "value": "0",
+      "audience": "all",
+      "type": "free_service"
+    },
+    {
+      "id": "phr_005",
+      "title": "Senior Citizen 15% OFF (60+ age)",
+      "value": "15%",
+      "audience": "senior",
+      "type": "percentage_discount"
+    },
+    {
+      "id": "phr_006",
+      "title": "Diabetic Care Combo: Glucometer + 50 strips @ ₹999",
+      "value": "999",
+      "audience": "new_user",
+      "type": "service_at_price"
+    },
+    {
+      "id": "phr_007",
+      "title": "Free Pharmacist Consultation (10 min)",
+      "value": "0",
+      "audience": "all",
+      "type": "free_service"
+    },
+    {
+      "id": "phr_008",
+      "title": "Subscription refill reminder + delivery (chronic Rx)",
+      "value": "0",
+      "audience": "repeat_user",
+      "type": "free_service"
+    }
   ],
   "peer_stats": {
     "scope": "metro_neighbourhood_pharmacies_2026",
@@ -108,17 +171,57 @@
     }
   ],
   "seasonal_beats": [
-    { "month_range": "Apr-Jun", "note": "summer surge — ORS, sunscreen, anti-fungal, deodorant" },
-    { "month_range": "Jul-Aug", "note": "monsoon — anti-bacterial, anti-fungal, immunity supplements peak" },
-    { "month_range": "Oct-Nov", "note": "festival sweets → blood sugar spike — diabetic monitoring needs surge" },
-    { "month_range": "Dec-Jan", "note": "respiratory peak — cough/cold/anti-allergic 2x baseline" }
+    {
+      "month_range": "Apr-Jun",
+      "note": "summer surge — ORS, sunscreen, anti-fungal, deodorant"
+    },
+    {
+      "month_range": "Jul-Aug",
+      "note": "monsoon — anti-bacterial, anti-fungal, immunity supplements peak"
+    },
+    {
+      "month_range": "Oct-Nov",
+      "note": "festival sweets → blood sugar spike — diabetic monitoring needs surge"
+    },
+    {
+      "month_range": "Dec-Jan",
+      "note": "respiratory peak — cough/cold/anti-allergic 2x baseline"
+    }
   ],
   "trend_signals": [
-    { "query": "medicine home delivery", "delta_yoy": 0.42, "segment_age": "all", "skew": "balanced" },
-    { "query": "generic medicine", "delta_yoy": 0.34, "segment_age": "30-65", "skew": "balanced" },
-    { "query": "diabetes care kit", "delta_yoy": 0.28, "segment_age": "40-65", "skew": "balanced" },
-    { "query": "blood pressure monitor", "delta_yoy": 0.18, "segment_age": "45-70", "skew": "balanced" }
+    {
+      "query": "medicine home delivery",
+      "delta_yoy": 0.42,
+      "segment_age": "all",
+      "skew": "balanced"
+    },
+    {
+      "query": "generic medicine",
+      "delta_yoy": 0.34,
+      "segment_age": "30-65",
+      "skew": "balanced"
+    },
+    {
+      "query": "diabetes care kit",
+      "delta_yoy": 0.28,
+      "segment_age": "40-65",
+      "skew": "balanced"
+    },
+    {
+      "query": "blood pressure monitor",
+      "delta_yoy": 0.18,
+      "segment_age": "45-70",
+      "skew": "balanced"
+    }
   ],
-  "regulatory_authorities": ["CDSCO", "State FDA", "Drug Controller General of India (DCGI)"],
-  "professional_journals": ["Pharmabiz", "ChemistryView India", "IPA Bulletin"]
+  "regulatory_authorities": [
+    "CDSCO",
+    "State FDA",
+    "Drug Controller General of India (DCGI)"
+  ],
+  "professional_journals": [
+    "Pharmabiz",
+    "ChemistryView India",
+    "IPA Bulletin"
+  ]
 }
