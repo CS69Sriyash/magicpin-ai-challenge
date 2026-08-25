@@ -240,8 +240,7 @@ async def metadata() -> dict[str, Any]:
     provider = COMPOSER.llm
     model_name = getattr(provider, "model", "unknown")
     return {
-        "team_name": "Team Sriyash",
-        "team_members": ["Sriyash"],
+        "name": "Sriyash",
         "model": f"{model_name} (via {provider.name})",
         "approach": (
             "Flexible-schema ingestion + category-routed EngagementComposer "

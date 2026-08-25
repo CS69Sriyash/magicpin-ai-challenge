@@ -17,8 +17,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 4. App Code
-# Copy the main application file into the working directory
-COPY bot.py .
+# Copy the application files into the working directory
+COPY *.py ./
 
 # 5. Network
 # Expose port 8080 to the outside world

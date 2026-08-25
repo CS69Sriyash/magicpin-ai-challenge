@@ -1,6 +1,6 @@
 # magicpin AI Challenge — "Vera" Assistant
 
-This is Team Sriyash's submission for the magicpin Vera AI Challenge. The bot is fully dockerized and uses a stateless-API design with an in-memory context store as required by the judge simulator.
+This is Sriyash's submission for the magicpin Vera AI Challenge. The bot is fully dockerized and uses a stateless-API design with an in-memory context store as required by the judge simulator.
 
 ## 1. Our Approach
 We designed our Engagement Composer around strict prompt-engineering constraints and dynamic category routing:
@@ -31,4 +31,10 @@ docker run -p 8080:8080 -e LLM_PROVIDER=groq -e GROQ_API_KEY="your_key" magicpin
 ```bash
 uv sync
 uv run uvicorn bot:app --host 0.0.0.0 --port 8080
+```
+
+### Run Streamlit Dashboard (Local)
+```bash
+uv pip install streamlit requests
+streamlit run dashboard.py
 ```
