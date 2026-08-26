@@ -16,7 +16,9 @@ from datetime import datetime, timezone
 import requests
 import streamlit as st
 
-BASE_URL = "http://127.0.0.1:8080"
+import os
+
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8080")
 REQUEST_TIMEOUT = 15  # seconds — tick can legitimately take longer; overridden below
 
 st.set_page_config(page_title="Vera Control Panel", page_icon="🤖", layout="wide")
