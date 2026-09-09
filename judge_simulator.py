@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""
-magicpin AI Challenge — LLM-Powered Judge Simulator
-====================================================
 
-A strict but fair judge that scores your bot and explains WHY.
-
-HOW TO USE:
-1. Edit the CONFIGURATION section below (lines 25-45)
-2. Set your LLM provider and API key
-3. Set your bot URL
-4. Run: python judge_simulator.py
-
-That's it!
-
-Author: magicpin AI Challenge Team
-"""
 
 import os
 import sys
@@ -57,9 +42,7 @@ except ImportError:
             "environment variables."
         )
 
-# =============================================================================
-# ██████  CONFIGURATION - EDIT THIS SECTION ██████
-# =============================================================================
+
 
 BOT_URL = os.getenv("BOT_URL", "http://127.0.0.1:8080")
 LLM_PROVIDER = os.getenv("JUDGE_LLM_PROVIDER", "groq")
@@ -81,18 +64,14 @@ FULL_EVAL_BATCH_SIZE = int(os.getenv("FULL_EVAL_BATCH_SIZE", "2"))
 # this via env var if you want slower/gentler local iteration, but treat
 # 60s+ as a debugging tool, not a permanent setting.
 FULL_EVAL_BATCH_DELAY_SECONDS = float(os.getenv("FULL_EVAL_BATCH_DELAY_SECONDS", "60"))
-# =============================================================================
-# ██████  END OF CONFIGURATION - DON'T EDIT BELOW THIS LINE ██████
-# =============================================================================
+
 
 
 # Constants
 TIMEOUT_LLM = 45
 DATASET_DIR = Path(__file__).parent / "dataset"
 
-# =============================================================================
-# TERMINAL OUTPUT
-# =============================================================================
+
 
 
 class Colors:
